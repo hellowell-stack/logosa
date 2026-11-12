@@ -1,77 +1,58 @@
 import { NextResponse } from "next/server";
 import { journeyBySlug } from "@/data/journeys";
 import { destinationBySlug } from "@/data/destinations";
-import { company, confirmed } from "@/data/company";
+import { databaseConfigured } from "@/lib/db";
+import { createEnquiry } from "@/lib/bookings/service";
+import { mailConfigured, sendMail, staffInbox } from "@/lib/mail";
+import { limited } from "@/lib/rate-limit";
+import { EMAIL, clean, clientIp, int } from "@/lib/validate";
 
 /**
  * ENQUIRIES
  *
- * Delivery is pluggable, and configured entirely by environment:
+ * Every enquiry is recorded in the database first, where it appears in the
+ * admin under Enquiries. It is then also delivered, if a channel is set up:
  *
  *   RESEND_API_KEY + INQUIRY_TO   → emailed via Resend
  *   INQUIRY_WEBHOOK_URL           → POSTed as JSON (Zapier, Make, a CRM…)
- *   neither                       → recorded in the server log, and the
- *                                   response tells the client to fall back to
- *                                   a prefilled mailto/WhatsApp message
  *
- * The last case matters: until Logosa supplies a destination, the form must
- * not pretend an enquiry was delivered. It says so, and hands the visitor a
- * route that actually works.
+ * The response's `delivered` is true when at least one of those three things
+ * actually happened. When none did — no database, no mail, no webhook — it is
+ * false, and the form says so and hands the visitor a route that works
+ * instead. It never reports success for a message that went nowhere.
  */
 
 export const runtime = "nodejs";
 
+/**
+ * What InquiryForm sends. `date`, `journey`, `destination` and `itinerary` are
+ * the names this route originally read; they are still accepted so that
+ * nothing already posting to it breaks.
+ */
 interface Payload {
   name?: string;
   email?: string;
   phone?: string;
   travellers?: number;
+  startDate?: string;
   date?: string;
+  duration?: string;
   message?: string;
+  journeySlug?: string;
   journey?: string;
+  destinationSlugs?: string[];
   destination?: string;
-  /** Free-text itinerary produced by the trip planner. */
+  experiences?: string[];
   itinerary?: string;
   /** Honeypot — must be empty. */
   website?: string;
 }
 
-// Coarse in-memory throttle. Adequate for a single instance; if the site is
-// ever run on more than one, move this to a shared store.
-const hits = new Map<string, { n: number; until: number }>();
-const LIMIT = 5;
-const WINDOW = 10 * 60 * 1000;
-
-function throttled(ip: string): boolean {
-  const now = Date.now();
-  const rec = hits.get(ip);
-  if (!rec || now > rec.until) {
-    hits.set(ip, { n: 1, until: now + WINDOW });
-    return false;
-  }
-  rec.n += 1;
-  return rec.n > LIMIT;
-}
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-/** Trim, cap length, and strip control characters (newlines and tabs kept). */
-const clean = (v: unknown, max: number): string =>
-  typeof v === "string"
-    ? v
-        // eslint-disable-next-line no-control-regex
-        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-        .trim()
-        .slice(0, max)
-    : "";
+const list = (v: unknown, max = 12): string[] =>
+  Array.isArray(v) ? v.map((x) => clean(x, 80)).filter(Boolean).slice(0, max) : [];
 
 export async function POST(request: Request) {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
-
-  if (throttled(ip)) {
+  if (limited(`inquiry:${clientIp(request.headers)}`, 5, 10 * 60_000)) {
     return NextResponse.json(
       { ok: false, error: "Too many enquiries from this connection. Please try again shortly." },
       { status: 429 },
@@ -95,35 +76,60 @@ export async function POST(request: Request) {
   const phone = clean(body.phone, 60);
   const message = clean(body.message, 4000);
   const itinerary = clean(body.itinerary, 4000);
-  const date = clean(body.date, 40);
-  const travellers = Number.isFinite(Number(body.travellers))
-    ? Math.min(40, Math.max(1, Math.round(Number(body.travellers))))
-    : undefined;
+  const preferredStart = clean(body.startDate ?? body.date, 40);
+  const duration = clean(body.duration, 80);
+  const travellers = int(body.travellers, 1, 40);
 
   const errors: Record<string, string> = {};
   if (name.length < 2) errors.name = "Please tell us your name.";
   if (!EMAIL.test(email)) errors.email = "Please give an email address we can reply to.";
-
   if (Object.keys(errors).length) {
     return NextResponse.json({ ok: false, errors }, { status: 422 });
   }
 
   // Resolve references against real data, so staff never receive a slug that
   // does not correspond to anything.
-  const journey = body.journey ? journeyBySlug(clean(body.journey, 80)) : undefined;
-  const destination = body.destination
-    ? destinationBySlug(clean(body.destination, 80))
-    : undefined;
+  const journey = journeyBySlug(clean(body.journeySlug ?? body.journey, 80));
+  const destinations = [...list(body.destinationSlugs), clean(body.destination, 80)]
+    .map((s) => destinationBySlug(s))
+    .filter((d): d is NonNullable<typeof d> => Boolean(d));
+  const experiences = list(body.experiences);
 
-  const received = new Date();
+  // ── Record ──────────────────────────────────────────────────────────────
+  let reference: string | undefined;
+  if (databaseConfigured()) {
+    try {
+      const row = await createEnquiry({
+        name,
+        email,
+        phone: phone || null,
+        travellers: travellers ?? null,
+        preferredStart: preferredStart || null,
+        duration: duration || null,
+        journeySlug: journey?.slug ?? null,
+        destinationSlugs: destinations.length ? destinations.map((d) => d.slug) : null,
+        experiences: experiences.length ? experiences : null,
+        message: message || null,
+        itinerary: itinerary || null,
+      });
+      reference = row.reference;
+    } catch (err) {
+      // Carry on to email: a database outage should not also cost the enquiry.
+      console.error("[inquiry] could not record:", err);
+    }
+  }
+
   const summary = [
     "LOGOSA — WEBSITE ENQUIRY",
     "".padEnd(46, "="),
-    `Received:    ${received.toISOString()}`,
+    reference ? `Reference:   ${reference}` : null,
+    `Received:    ${new Date().toISOString()}`,
     journey ? `Journey:     ${journey.name} (${journey.days} days, ${journey.difficulty})` : null,
-    destination ? `Destination: ${destination.name}` : null,
+    destinations.length ? `Places:      ${destinations.map((d) => d.name).join(", ")}` : null,
+    experiences.length ? `Interests:   ${experiences.join(", ")}` : null,
     travellers ? `Travellers:  ${travellers}` : null,
-    date ? `Preferred:   ${date}` : null,
+    preferredStart ? `Preferred:   ${preferredStart}` : null,
+    duration ? `Time:        ${duration}` : null,
     "",
     "CONTACT",
     "".padEnd(46, "-"),
@@ -133,76 +139,57 @@ export async function POST(request: Request) {
     message ? ["", "MESSAGE", "".padEnd(46, "-"), message].join("\n") : null,
     itinerary ? ["", "PLANNER OUTPUT", "".padEnd(46, "-"), itinerary].join("\n") : null,
   ]
-    .filter(Boolean)
+    .filter((l) => l !== null)
     .join("\n");
 
-  const record = {
-    receivedAt: received.toISOString(),
-    name,
-    email,
-    phone: phone || null,
-    travellers: travellers ?? null,
-    date: date || null,
-    journey: journey?.slug ?? null,
-    journeyName: journey?.name ?? null,
-    destination: destination?.slug ?? null,
-    message: message || null,
-    itinerary: itinerary || null,
-    summary,
-  };
+  // ── Deliver ─────────────────────────────────────────────────────────────
+  let sent = false;
+  const to = staffInbox();
+  if (mailConfigured() && to) {
+    const subjectParts = [journey?.name, ...destinations.map((d) => d.name)].filter(Boolean).slice(0, 2).join(" · ");
+    sent = await sendMail({
+      to,
+      replyTo: email,
+      subject: `Enquiry${reference ? ` ${reference}` : ""}: ${subjectParts || "General"} — ${name}`,
+      text: summary,
+    });
+  }
 
-  // ── Delivery ────────────────────────────────────────────────────────────
-  const to = process.env.INQUIRY_TO || (confirmed(company.email) ? company.email : null);
-  const subjectParts = [journey?.name, destination?.name].filter(Boolean).join(" · ");
-  const subject = `Enquiry: ${subjectParts || "General"} — ${name}`;
-
-  try {
-    if (process.env.RESEND_API_KEY && to) {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: process.env.INQUIRY_FROM || "Logosa Website <onboarding@resend.dev>",
-          to: [to],
-          reply_to: email,
-          subject,
-          text: summary,
-        }),
-      });
-      if (!res.ok) throw new Error(`resend ${res.status}`);
-      return NextResponse.json({ ok: true, delivered: true });
-    }
-
-    if (process.env.INQUIRY_WEBHOOK_URL) {
+  if (process.env.INQUIRY_WEBHOOK_URL) {
+    try {
       const res = await fetch(process.env.INQUIRY_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(record),
+        body: JSON.stringify({
+          reference: reference ?? null,
+          receivedAt: new Date().toISOString(),
+          name,
+          email,
+          phone: phone || null,
+          travellers: travellers ?? null,
+          date: preferredStart || null,
+          duration: duration || null,
+          journey: journey?.slug ?? null,
+          journeyName: journey?.name ?? null,
+          destinations: destinations.map((d) => d.slug),
+          experiences,
+          message: message || null,
+          itinerary: itinerary || null,
+          summary,
+        }),
       });
       if (!res.ok) throw new Error(`webhook ${res.status}`);
-      return NextResponse.json({ ok: true, delivered: true });
+      sent = true;
+    } catch (err) {
+      console.error("[inquiry] webhook failed:", err);
     }
-  } catch (err) {
-    console.error("[inquiry] delivery failed:", err);
-    console.info("[inquiry] unsent enquiry follows:\n" + summary);
-    return NextResponse.json(
-      { ok: true, delivered: false, reason: "delivery-failed", summary },
-      { status: 200 },
-    );
   }
 
-  // Nothing configured yet. Say so rather than showing a success message for
-  // an enquiry that went nowhere.
-  console.warn(
-    "[inquiry] No delivery configured (set RESEND_API_KEY + INQUIRY_TO, or INQUIRY_WEBHOOK_URL).",
-  );
-  console.info("[inquiry] enquiry follows:\n" + summary);
+  const delivered = Boolean(reference) || sent;
+  if (!delivered) {
+    console.warn("[inquiry] Not recorded or delivered — set MONGODB_URI, or RESEND_API_KEY + INQUIRY_TO, or INQUIRY_WEBHOOK_URL.");
+    console.info("[inquiry] enquiry follows:\n" + summary);
+  }
 
-  return NextResponse.json(
-    { ok: true, delivered: false, reason: "not-configured", summary },
-    { status: 200 },
-  );
+  return NextResponse.json({ ok: true, delivered, reference: reference ?? null, summary: delivered ? undefined : summary });
 }

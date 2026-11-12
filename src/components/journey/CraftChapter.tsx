@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ScrollTrigger, registerGsap, prefersReducedMotion, isHandheld } from "@/lib/animations/motion";
+import {
+  ScrollTrigger,
+  registerGsap,
+  prefersReducedMotion,
+  useReducedMotion,
+  useHandheld,
+} from "@/lib/animations/motion";
 import { craftChannel } from "@/lib/animations/scrollState";
 import { creditByFile } from "@/data/credits";
 import { DhakaBand } from "@/components/common/Dhaka";
@@ -20,18 +26,15 @@ const StoneFigure = dynamic(() => import("@/components/three/StoneFigure"), { ss
  */
 export default function CraftChapter() {
   const root = useRef<HTMLDivElement>(null);
-  const [still, setStill] = useState(false);
-  const [low, setLow] = useState(false);
+  const still = useReducedMotion();
+  const low = useHandheld();
   const credit = creditByFile("/models/kala-bhairava.glb");
 
   useEffect(() => {
     registerGsap();
-    const reduced = prefersReducedMotion();
-    setStill(reduced);
-    setLow(isHandheld());
 
     const ch = craftChannel();
-    if (reduced) {
+    if (prefersReducedMotion()) {
       ch.progress = 0.5;
       return;
     }

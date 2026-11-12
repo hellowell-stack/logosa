@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -36,5 +37,26 @@ export function isHandheld(): boolean {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(max-width: 860px), (pointer: coarse)").matches;
 }
+
+/*
+ * The same two facts, for deciding what to render.
+ *
+ * Read through useSyncExternalStore so the server render and the hydrating
+ * client agree — both start from false — and React swaps in the real value
+ * itself once hydration is done. Each is read once per page load and then
+ * held: a sequence that has downgraded itself for a phone stays downgraded,
+ * rather than swapping models when a window is resized across the line.
+ */
+const once = (read: () => boolean) => {
+  let value: boolean | undefined;
+  return () => (value ??= read());
+};
+const reducedOnce = once(prefersReducedMotion);
+const handheldOnce = once(isHandheld);
+const neverChanges = () => () => {};
+const onServer = () => false;
+
+export const useReducedMotion = () => useSyncExternalStore(neverChanges, reducedOnce, onServer);
+export const useHandheld = () => useSyncExternalStore(neverChanges, handheldOnce, onServer);
 
 export { gsap, ScrollTrigger };

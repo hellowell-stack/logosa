@@ -272,6 +272,16 @@
   font-feature-settings: "tnum" 1;
 }
 
+/* Booking and enquiry references (LG-7KQ3P9) — read out on the phone and
+   typed into emails, so set in the grotesque: Bodoni's hairline hyphen all but
+   disappears, and its 1 reads as an I. */
+.ref {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
 .deva {
   font-family: var(--font-deva);
   font-weight: 400;

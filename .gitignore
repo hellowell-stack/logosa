@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Local screenshot output from scripts/shoot.mjs
 .shots/
+
+# local development database (MongoDB) — see src/lib/db/index.ts
+/.data/

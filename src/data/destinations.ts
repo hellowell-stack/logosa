@@ -1,4 +1,5 @@
 import type { ExperienceId } from "./experiences";
+import { photos, type Photo } from "./photos";
 
 /**
  * DESTINATIONS
@@ -56,9 +57,8 @@ export interface Destination {
   /** Permits a visitor needs. Fees deliberately excluded — they change. */
   permits?: string[];
   unesco?: string;
-  /** Path under /public/images/destinations. See PLACEHOLDERS.md. */
-  image: string;
-  imageAlt: string;
+  /** The lead photograph. See photos.ts. */
+  image: Photo;
 }
 
 export const destinations: Destination[] = [
@@ -108,9 +108,7 @@ export const destinations: Destination[] = [
     unesco: "Kathmandu Valley — inscribed 1979",
     gettingThere:
       "Tribhuvan International Airport is the country's only international gateway; the valley is the arrival point for almost every visitor to Nepal.",
-    image: "/images/destinations/kathmandu-valley.webp",
-    imageAlt:
-      "The gilded spire and painted eyes of Swayambhunath stupa above the valley, strung with prayer flags",
+    image: photos.swayambhunath,
   },
 
   {
@@ -158,9 +156,7 @@ export const destinations: Destination[] = [
     ],
     gettingThere:
       "25 minutes by air from Kathmandu, or six to seven hours by road along the Prithvi Highway.",
-    image: "/images/destinations/pokhara.webp",
-    imageAlt:
-      "Painted wooden boats moored on the still water of Phewa Lake at Pokhara, hills rising behind",
+    image: photos.phewaLake,
   },
 
   {
@@ -216,9 +212,7 @@ export const destinations: Destination[] = [
     unesco: "Sagarmatha National Park — inscribed 1979",
     gettingThere:
       "Most routes fly Kathmandu or Ramechhap to Lukla, then walk. Flights are weather-dependent and delays are normal, not exceptional — build spare days around them.",
-    image: "/images/destinations/everest-khumbu.webp",
-    imageAlt:
-      "The Everest massif seen from the air, the summit pyramid standing clear above Nuptse and the Khumbu valley",
+    image: photos.everestAerial,
   },
 
   {
@@ -268,9 +262,7 @@ export const destinations: Destination[] = [
     permits: ["Annapurna Conservation Area Permit (ACAP)", "TIMS card"],
     gettingThere:
       "Almost all routes start from Pokhara — road to Nayapul, Besisahar or Jomsom depending on the trek.",
-    image: "/images/destinations/annapurna.webp",
-    imageAlt:
-      "A line of trekkers on the snow approach to Annapurna Base Camp, snow faces of the sanctuary rising ahead",
+    image: photos.annapurnaSanctuary,
   },
 
   {
@@ -325,9 +317,7 @@ export const destinations: Destination[] = [
       "Restricted-area permit fees and minimum group sizes are set by the Department of Immigration and change. Confirm current requirements before booking.",
     gettingThere:
       "Fly Pokhara to Jomsom, then walk or drive north. The road now reaches Lo Manthang but the walking route remains the reason to go.",
-    image: "/images/destinations/upper-mustang.webp",
-    imageAlt:
-      "Chortens and whitewashed walls beneath fluted ochre cliffs in Upper Mustang, snow peaks behind",
+    image: photos.mustangChortens,
   },
 
   {
@@ -376,9 +366,7 @@ export const destinations: Destination[] = [
     ],
     permits: ["Langtang National Park entry permit", "TIMS card"],
     gettingThere: "Road from Kathmandu to Syabrubesi, roughly seven hours. No domestic flight.",
-    image: "/images/destinations/langtang.webp",
-    imageAlt:
-      "A walker crossing a prayer-flagged suspension bridge in the Langtang valley, glaciated peaks at its head",
+    image: photos.langtangBridge,
   },
 
   {
@@ -429,9 +417,7 @@ export const destinations: Destination[] = [
     permits: ["Chitwan National Park entry permit — issued daily"],
     gettingThere:
       "Roughly five hours by road from Kathmandu or Pokhara, or a short flight to Bharatpur.",
-    image: "/images/destinations/chitwan.webp",
-    imageAlt:
-      "An elephant crossing a river channel through mist on the Chitwan floodplain, grassland on both banks",
+    image: photos.chitwanRiver,
   },
 
   {
@@ -480,9 +466,7 @@ export const destinations: Destination[] = [
     unesco: "Lumbini, the Birthplace of the Lord Buddha — inscribed 1997",
     gettingThere:
       "Fly to Bhairahawa (Gautam Buddha International Airport), 22 km away, or drive from Pokhara or Chitwan.",
-    image: "/images/destinations/lumbini.webp",
-    imageAlt:
-      "The Maya Devi Temple and Ashokan pillar at Lumbini, reflected in the sacred pond at dawn",
+    image: photos.mayaDevi,
   },
 ];
 

@@ -3,6 +3,7 @@ import type { Destination } from "@/data/destinations";
 import { formatSeason } from "@/data/destinations";
 import { metres, pad2 } from "@/lib/utils";
 import Reveal from "@/components/common/Reveal";
+import Photograph from "@/components/common/Photograph";
 import { DhakaLozenge } from "@/components/common/Dhaka";
 
 const TERRAIN_LABEL: Record<Destination["terrain"], string> = {
@@ -81,15 +82,9 @@ export default function Chapter({
 
   const Plate = (
     <figure className="figure-frame h-full">
-      {/* The plates are SVG and already sized; a plain img keeps them
-          resolution-independent and avoids a raster round-trip. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={d.image}
-        alt={d.imageAlt}
-        loading="lazy"
-        decoding="async"
-        className="h-full w-full object-cover"
+      <Photograph
+        photo={d.image}
+        sizes={variant === 2 ? "100vw" : "(max-width: 900px) 100vw, 50vw"}
       />
     </figure>
   );

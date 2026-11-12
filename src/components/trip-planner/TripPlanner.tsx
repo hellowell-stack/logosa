@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { experiences, type ExperienceId } from "@/data/experiences";
@@ -46,24 +46,32 @@ interface Plan {
   usedDays: number;
 }
 
+/** `trekking,food` → the ids that exist; anything else is dropped. */
+function interestsFrom(query: string): ExperienceId[] {
+  return query
+    .split(",")
+    .filter((p): p is ExperienceId => experiences.some((e) => e.id === p));
+}
+
 export default function TripPlanner() {
   const params = useSearchParams();
 
   const [days, setDays] = useState(14);
   const [pace, setPace] = useState("active");
-  const [interests, setInterests] = useState<ExperienceId[]>([]);
   const [travellers, setTravellers] = useState(2);
   const [month, setMonth] = useState<number>(10);
   const [budget, setBudget] = useState("unsure");
 
-  useEffect(() => {
-    const raw = params.get("interests");
-    if (!raw) return;
-    const valid = raw
-      .split(",")
-      .filter((p) => experiences.some((e) => e.id === p)) as ExperienceId[];
-    if (valid.length) setInterests(valid);
-  }, [params]);
+  // Arriving from the finder with its choices — /plan?interests=trekking,food.
+  // Read while rendering, and again only if the address changes, so it never
+  // overrides what has been chosen here since.
+  const query = params.get("interests") ?? "";
+  const [interests, setInterests] = useState<ExperienceId[]>(() => interestsFrom(query));
+  const [queryRead, setQueryRead] = useState(query);
+  if (query !== queryRead) {
+    setQueryRead(query);
+    setInterests(interestsFrom(query));
+  }
 
   const cap = PACE.find((p) => p.id === pace)!.cap;
 

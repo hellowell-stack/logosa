@@ -24,7 +24,7 @@ export interface Chapter extends CameraState {
 
 /** Shortest angular path, so a camera never swings the long way round. */
 function lerpBearing(a: number, b: number, t: number): number {
-  let d = ((b - a) % 360 + 540) % 360 - 180;
+  const d = ((b - a) % 360 + 540) % 360 - 180;
   return a + d * t;
 }
 

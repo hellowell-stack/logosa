@@ -12,11 +12,13 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { photos, type Photo } from "./photos";
+
 export type Block =
   | { type: "text"; text: string }
   | { type: "heading"; text: string }
   | { type: "quote"; text: string; attribution?: string }
-  | { type: "figure"; image: string; alt: string; caption?: string; span?: "full" | "inset" }
+  | { type: "figure"; photo: Photo; caption?: string; span?: "full" | "inset" }
   | { type: "facts"; title?: string; items: { label: string; value: string }[] }
   | { type: "note"; text: string };
 
@@ -36,8 +38,8 @@ export interface Story {
   /** Slugs from destinations.ts, for cross-linking. */
   destinations: string[];
   tags: string[];
-  image: string;
-  imageAlt: string;
+  /** The lead photograph. See photos.ts. */
+  image: Photo;
   body: Block[];
 }
 
@@ -54,8 +56,7 @@ export const stories: Story[] = [
     readingMinutes: 6,
     destinations: ["everest-khumbu"],
     tags: ["Trekking", "Altitude", "Preparation"],
-    image: "/images/stories/walk-high-sleep-low.svg",
-    imageAlt: "A trekker on the moraine below Lobuche with the Khumbu glacier and peaks beyond",
+    image: photos.khumbuIcefall,
     body: [
       {
         type: "text",
@@ -129,8 +130,8 @@ export const stories: Story[] = [
     readingMinutes: 7,
     destinations: ["upper-mustang", "annapurna"],
     tags: ["Mustang", "History", "Geology"],
-    image: "/images/stories/kali-gandaki.svg",
-    imageAlt: "The Kali Gandaki riverbed running between eroded cliffs beneath high snow peaks",
+    // Dhaulagiri is the western wall of the gorge the piece is about.
+    image: photos.dhaulagiri,
     body: [
       {
         type: "text",
@@ -200,8 +201,7 @@ export const stories: Story[] = [
     readingMinutes: 5,
     destinations: ["kathmandu-valley"],
     tags: ["Kathmandu", "Architecture", "Craft"],
-    image: "/images/stories/newar-window.svg",
-    imageAlt: "A carved wooden lattice window in a Newar courtyard, deep-set in a brick facade",
+    image: photos.nyatapola,
     body: [
       {
         type: "text",

@@ -2,9 +2,10 @@ import Link from "next/link";
 import type { Story } from "@/data/stories";
 import { formatStoryDate } from "@/data/stories";
 import Reveal from "@/components/common/Reveal";
+import Photograph from "@/components/common/Photograph";
 
 /**
- * Stories from the road. The lead piece is set large with its plate; the rest
+ * Stories from the road. The lead piece is set large with its photograph; the rest
  * run as an index beneath it. A journal has a front page, not a row of equal
  * tiles.
  */
@@ -39,13 +40,10 @@ export default function StoryRail({ stories }: { stories: Story[] }) {
               className="group col-span-6 lg:col-span-7 lg:col-start-1"
             >
               <div className="figure-frame aspect-[16/10] w-full">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={lead.image}
-                  alt={lead.imageAlt}
-                  loading="lazy"
-                  decoding="async"
-                  className="h-full w-full object-cover transition-transform duration-[1.2s] ease-[var(--ease-out-expo)] group-hover:scale-[1.03]"
+                <Photograph
+                  photo={lead.image}
+                  sizes="(max-width: 900px) 100vw, 58vw"
+                  className="transition-transform duration-[1.2s] ease-[var(--ease-out-expo)] group-hover:scale-[1.03]"
                 />
               </div>
             </Link>

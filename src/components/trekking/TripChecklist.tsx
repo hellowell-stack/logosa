@@ -1,7 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { filterChecklist, kindsForJourney } from "@/data/checklist";
+
+/*
+ * Where the ticks are kept: localStorage, read through useSyncExternalStore,
+ * so the server and the hydrating page both draw an unticked list and React
+ * swaps in the saved one straight after. Storage can throw outright in a
+ * locked-down browser, so every access is guarded and the list falls back to
+ * memory — it still works for the session, it just isn't kept.
+ */
+const memory = new Map<string, string>();
+const listeners = new Set<() => void>();
+
+function subscribe(onChange: () => void) {
+  listeners.add(onChange);
+  // The same list ticked in another tab.
+  window.addEventListener("storage", onChange);
+  return () => {
+    listeners.delete(onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function readTicks(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return memory.get(key) ?? null;
+  }
+}
+
+function writeTicks(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    memory.set(key, value);
+  }
+  listeners.forEach((l) => l());
+}
 
 /**
  * An optional checklist, filtered to the journey it appears on.
@@ -25,29 +62,18 @@ export default function TripChecklist({
   );
   const storageKey = `logosa:checklist:${journeyName}`;
 
-  const [done, setDone] = useState<Record<string, boolean>>({});
-  const [loaded, setLoaded] = useState(false);
-
-  // Read once on mount. Storage can throw outright in a locked-down browser,
-  // so every access is guarded and the list simply starts empty on failure.
-  useEffect(() => {
+  const saved = useSyncExternalStore(subscribe, () => readTicks(storageKey), () => null);
+  const done = useMemo<Record<string, boolean>>(() => {
     try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) setDone(JSON.parse(raw));
+      const parsed: unknown = saved ? JSON.parse(saved) : null;
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
     } catch {
-      /* private mode, blocked storage — an unticked list is a fine result */
+      return {}; // a corrupted entry is an unticked list, not a broken page
     }
-    setLoaded(true);
-  }, [storageKey]);
+  }, [saved]);
 
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(done));
-    } catch {
-      /* nothing to do; the list still works for this session */
-    }
-  }, [done, loaded, storageKey]);
+  const tick = (id: string, on: boolean) =>
+    writeTicks(storageKey, JSON.stringify({ ...done, [id]: on }));
 
   const total = categories.reduce((n, c) => n + c.items.length, 0);
   const ticked = Object.values(done).filter(Boolean).length;
@@ -82,9 +108,7 @@ export default function TripChecklist({
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={(e) =>
-                          setDone((d) => ({ ...d, [item.id]: e.target.checked }))
-                        }
+                        onChange={(e) => tick(item.id, e.target.checked)}
                         className="peer sr-only"
                       />
                       {/* A drawn box, matching the woven diamond used elsewhere */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { mapChapters, routeCoords } from "@/data/map-journey";
 import {
@@ -11,7 +11,7 @@ import {
   lineFeature,
   type Coord,
 } from "@/lib/mapbox/journey";
-import { registerGsap, gsap, ScrollTrigger, prefersReducedMotion, isHandheld } from "@/lib/animations/motion";
+import { registerGsap, ScrollTrigger, prefersReducedMotion, isHandheld } from "@/lib/animations/motion";
 import Atlas from "./Atlas";
 import { pad2 } from "@/lib/utils";
 
@@ -29,25 +29,31 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
  * Mapbox token, when the visitor has asked for reduced motion, or when WebGL
  * is unavailable. The fallback tells the same story with the same data.
  */
-export default function MapJourney() {
-  const [mode, setMode] = useState<"pending" | "gl" | "atlas">("pending");
+type Mode = "pending" | "gl" | "atlas";
 
-  useEffect(() => {
-    if (!TOKEN || prefersReducedMotion()) {
-      setMode("atlas");
-      return;
-    }
-    // WebGL is checked before mapbox-gl is even fetched, so an unsupported
-    // device never downloads 200 kB it cannot use.
-    let ok = false;
-    try {
-      const c = document.createElement("canvas");
-      ok = !!(c.getContext("webgl2") || c.getContext("webgl"));
-    } catch {
-      ok = false;
-    }
-    setMode(ok ? "gl" : "atlas");
-  }, []);
+/** Decided once per page load — neither the device nor the visitor's settings change mid-visit. */
+let decided: Mode | undefined;
+function decideMode(): Mode {
+  if (decided) return decided;
+  if (!TOKEN || prefersReducedMotion()) return (decided = "atlas");
+  // WebGL is checked before mapbox-gl is even fetched, so an unsupported
+  // device never downloads 200 kB it cannot use.
+  let ok = false;
+  try {
+    const c = document.createElement("canvas");
+    ok = !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    ok = false;
+  }
+  return (decided = ok ? "gl" : "atlas");
+}
+const neverChanges = () => () => {};
+const onServer = (): Mode => "pending";
+
+export default function MapJourney() {
+  // The server cannot know any of this, so it renders the pending frame and
+  // the browser decides as the page hydrates.
+  const mode = useSyncExternalStore(neverChanges, decideMode, onServer);
 
   if (mode === "atlas") return <Atlas />;
   if (mode === "pending") {
@@ -223,7 +229,13 @@ function GlJourney() {
       style={{ height: `${mapChapters.length * 85}vh` }}
     >
       <div className="sticky top-0 h-screen w-full overflow-hidden bg-paper-3">
-        <div ref={holderRef} className="absolute inset-0" />
+        {/* The map fills a positioned wrapper rather than being positioned
+            itself: Mapbox's stylesheet gives its container `position:
+            relative`, which would override `absolute inset-0` and collapse
+            the map to a strip at the top of the frame. */}
+        <div className="absolute inset-0">
+          <div ref={holderRef} className="h-full w-full" />
+        </div>
 
         {/* Chapter card. Bottom-left on desktop, a bottom sheet on handhelds. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-[var(--spacing-gutter)] md:inset-y-0 md:right-auto md:flex md:w-[min(30rem,42vw)] md:items-center">

@@ -1,138 +1,108 @@
 /**
- * Renders the illustrated plates that stand in for photography.
+ * Prepares the photographs for the web.
  *
- * These are NOT stock images and NOT filler: they are drawn by the site's own
- * scene engine, in the brand palette, one per destination, so the site is
- * coherent and shippable before a photographer is commissioned. Each is
- * recorded in public/images/PLACEHOLDERS.md with the real filename that should
- * replace it.
+ * The originals stay in /images, exactly as supplied. For every entry in
+ * src/data/photos.ts this writes the copy the site serves, under
+ * public/images/photos/: WebP, sRGB, no alpha channel, and no larger than the
+ * site ever shows. Next's image optimiser cuts every smaller size from that one
+ * file on demand.
  *
- * Run: node scripts/build-images.mjs
+ * This is the only thing that should write to public/images/photos/. A copy
+ * whose photograph has been taken out of the library is deleted, so the folder
+ * never serves a picture the site has stopped describing.
+ *
+ * Run after adding or replacing a photograph:
+ *   npm run build:images
  */
-import { writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import sharp from "sharp";
+import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-// Windows needs a file:// URL for dynamic import of an absolute path.
-const mod = (...p) => pathToFileURL(join(root, ...p)).href;
 
-// Node strips TypeScript types natively, so the scene engine is imported
-// directly rather than duplicated here.
-const { buildScene, sceneToSvg, sceneKindFor } = await import(mod("src", "lib", "scene.ts"));
-const { destinations } = await import(mod("src", "data", "destinations.ts"));
-const { stories } = await import(mod("src", "data", "stories.ts"));
+// Node strips TypeScript types natively, so the library is read from the app
+// itself rather than copied in here, where the two would drift apart.
+const { photos } = await import(pathToFileURL(join(root, "src", "data", "photos.ts")).href);
 
-const destDir = join(root, "public", "images", "destinations");
-const storyDir = join(root, "public", "images", "stories");
-mkdirSync(destDir, { recursive: true });
-mkdirSync(storyDir, { recursive: true });
+const OUT = join(root, "public", "images", "photos");
+const PREFIX = "/images/photos/";
 
-const rows = [];
-const replaced = [];
+/** The widest the site ever needs: a full-bleed plate on a large, dense screen. */
+const LONG_EDGE_MAX = 2400;
 
-for (const d of destinations) {
-  // A destination pointing at anything but an SVG has a real photograph now.
-  // Don't draw a plate it will never use, and don't list it as outstanding.
-  if (!d.image.endsWith(".svg")) {
-    replaced.push({ path: d.image, subject: d.imageAlt });
-    continue;
+/**
+ * Below this, the original is enlarged here rather than in the browser.
+ *
+ * Several originals are well under 1,000 px wide, and the site shows them
+ * across a desktop screen. Left to the browser they are stretched with a soft
+ * filter at paint time; enlarged here they get Lanczos resampling and a light
+ * sharpen, which holds edges better. It adds no detail that was not in the
+ * file — a larger original is the only real fix — but it is the better of the
+ * two ways to show a small photograph large.
+ */
+const LONG_EDGE_MIN = 1600;
+
+const entries = Object.entries(photos);
+const expected = new Set();
+let failed = false;
+
+for (const [key, photo] of entries) {
+  const name = basename(photo.src);
+  if (!photo.src.startsWith(PREFIX) || !name.endsWith(".webp")) {
+    console.error(`  ✗ ${key}: src must be ${PREFIX}<name>.webp, not ${photo.src}`);
+    failed = true;
+  } else if (expected.has(name)) {
+    console.error(`  ✗ ${key}: ${photo.src} is already used by another photograph`);
+    failed = true;
   }
-  const kind = sceneKindFor[d.terrain];
-  const scene = buildScene({
-    kind,
-    seed: d.slug,
-    width: 1600,
-    height: 1000,
-    flags: d.terrain === "mountains",
-  });
-  const svg = sceneToSvg(scene, d.imageAlt);
-  const file = join(destDir, `${d.slug}.svg`);
-  writeFileSync(file, svg);
-  rows.push({
-    path: `/images/destinations/${d.slug}.svg`,
-    replaceWith: `${d.slug}.webp`,
-    subject: d.imageAlt,
-    kind,
-    bytes: svg.length,
-  });
+  if (!existsSync(join(root, photo.source))) {
+    console.error(`  ✗ ${key}: original not found at ${photo.source}`);
+    failed = true;
+  }
+  expected.add(name);
+}
+if (failed) process.exit(1);
+
+mkdirSync(OUT, { recursive: true });
+let total = 0;
+
+for (const [, photo] of entries) {
+  const from = join(root, photo.source);
+  const name = basename(photo.src);
+
+  const meta = await sharp(from).metadata();
+  // EXIF orientations 5–8 are a quarter turn, so width and height swap.
+  const [w, h] =
+    (meta.orientation ?? 1) >= 5 ? [meta.height, meta.width] : [meta.width, meta.height];
+  const long = Math.max(w, h);
+  const scale = Math.min(LONG_EDGE_MAX, Math.max(LONG_EDGE_MIN, long)) / long;
+
+  let img = sharp(from).rotate().removeAlpha().toColourspace("srgb");
+  if (scale !== 1) {
+    img = img.resize({
+      width: Math.round(w * scale),
+      height: Math.round(h * scale),
+      kernel: "lanczos3",
+    });
+  }
+  if (scale > 1) img = img.sharpen({ sigma: 0.8, m1: 0.4, m2: 1.2 });
+
+  const info = await img
+    .webp({ quality: 82, effort: 6, smartSubsample: true })
+    .toFile(join(OUT, name));
+  total += info.size;
+
+  const note = scale > 1 ? `enlarged from ${w}×${h}` : scale < 1 ? `reduced from ${w}×${h}` : "";
+  console.log(
+    `  ${name.padEnd(30)} ${`${info.width}×${info.height}`.padEnd(10)} ${`${(info.size / 1024).toFixed(0)} kB`.padStart(7)}  ${note}`,
+  );
 }
 
-// Story leads use a different aspect and a dusk palette where it suits.
-const STORY_SCENES = {
-  "walk-high-sleep-low": { kind: "alpine", flags: true },
-  "the-gorge-that-made-a-kingdom": { kind: "alpine", flags: false },
-  "how-to-read-a-newar-window": { kind: "valley", flags: false },
-};
-
-for (const s of stories) {
-  const cfg = STORY_SCENES[s.slug] ?? { kind: "alpine", flags: false };
-  const scene = buildScene({
-    kind: cfg.kind,
-    seed: s.slug,
-    width: 1600,
-    height: 900,
-    flags: cfg.flags,
-  });
-  const svg = sceneToSvg(scene, s.imageAlt);
-  const name = s.image.split("/").pop();
-  writeFileSync(join(storyDir, name), svg);
-  rows.push({
-    path: s.image,
-    replaceWith: name.replace(/\.svg$/, ".webp"),
-    subject: s.imageAlt,
-    kind: cfg.kind,
-    bytes: svg.length,
-  });
+for (const f of readdirSync(OUT)) {
+  if (expected.has(f)) continue;
+  unlinkSync(join(OUT, f));
+  console.log(`  removed ${f} — no longer in photos.ts`);
 }
 
-const total = rows.reduce((a, r) => a + r.bytes, 0);
-for (const r of rows) console.log(`  ${r.path}  ${(r.bytes / 1024).toFixed(1)}kB  [${r.kind}]`);
-console.log(`\n${rows.length} plates, ${(total / 1024).toFixed(0)}kB total`);
-
-const md = `# Placeholder imagery
-
-Every file listed here is a **generated illustration**, not a photograph and
-not stock. They are drawn by \`src/lib/scene.ts\` in the Logosa palette so the
-site is complete and coherent before a photographer is commissioned.
-
-## Replacing them
-
-Drop a real image into the same folder and point the \`image\` field in the
-corresponding data file at it. Nothing else needs to change — the layout,
-cropping and alt text already exist.
-
-| Placeholder | Replace with | Subject the photograph should show |
-| --- | --- | --- |
-${rows.map((r) => `| \`${r.path}\` | \`${r.replaceWith}\` | ${r.subject} |`).join("\n")}
-${
-  replaced.length
-    ? `
-## Already replaced
-
-These carry real photography and are no longer generated. Re-pointing the data
-file back at an \`.svg\` path brings the plate back on the next run.
-
-| File | Subject |
-| --- | --- |
-${replaced.map((r) => `| \`${r.path}\` | ${r.subject} |`).join("\n")}
-`
-    : ""
-}
-## Specification for real photography
-
-- **Format** — WebP or AVIF, sRGB. Supply the original alongside.
-- **Size** — 2400px on the long edge is enough; the site never serves larger.
-- **Aspect** — destinations are cropped to 4:5, 3:2 and 16:9 in different
-  places, so leave headroom. Do not supply a tightly cropped subject.
-- **Direction** — the identity reads as dawn light: low sun, long shadows,
-  cool ranges against warm ground. Midday photographs will not sit next to the
-  illustration language.
-- **Rights** — Logosa must hold the licence for commercial use. Note the
-  photographer's credit in the data file where attribution is required.
-
-Regenerate the placeholders at any time with \`npm run build:images\`.
-`;
-
-writeFileSync(join(root, "public", "images", "PLACEHOLDERS.md"), md);
-console.log("Wrote public/images/PLACEHOLDERS.md");
+console.log(`\n${entries.length} photographs, ${(total / 1024).toFixed(0)} kB → public/images/photos/`);

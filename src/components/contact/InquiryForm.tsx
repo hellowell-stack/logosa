@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { whatsappLink, mailtoLink, telLink, company, confirmed } from "@/data/company";
+import Field from "@/components/forms/Field";
 
 type State =
   | { status: "idle" }
   | { status: "sending" }
-  | { status: "sent"; reference: string }
+  | { status: "sent"; reference: string | null }
+  /** The route answered, but nothing recorded or delivered it. */
+  | { status: "undelivered" }
   | { status: "error"; message: string; errors?: Record<string, string> };
 
 /**
@@ -62,7 +65,8 @@ export default function InquiryForm({
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.ok) setState({ status: "sent", reference: data.reference });
+      if (data.ok && data.delivered === false) setState({ status: "undelivered" });
+      else if (data.ok) setState({ status: "sent", reference: data.reference ?? null });
       else
         setState({
           status: "error",
@@ -93,9 +97,13 @@ export default function InquiryForm({
           Thank you — we have it.
         </h3>
         <p className="mt-4 max-w-lg text-body leading-relaxed text-ink-soft">
-          Your reference is <span className="numeral text-ink">{state.reference}</span>. A person
-          will read this and reply, usually within one working day. Nepal is UTC+5:45, so allow for
-          the time difference.
+          {state.reference && (
+            <>
+              Your reference is <span className="numeral text-ink">{state.reference}</span>.{" "}
+            </>
+          )}
+          A person will read this and reply, usually within one working day. Nepal is UTC+5:45, so
+          allow for the time difference.
         </p>
         {wa && (
           <p className="mt-5 text-small text-ink-soft">
@@ -104,6 +112,43 @@ export default function InquiryForm({
               message us on WhatsApp
             </a>
             .
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (state.status === "undelivered") {
+    return (
+      <div className="border border-ink p-8">
+        <p className="label text-terracotta">Not sent</p>
+        <h3 className="mt-4 font-[family-name:var(--font-display)] text-display-s leading-tight">
+          We could not pass that on.
+        </h3>
+        <p className="mt-4 max-w-lg text-body leading-relaxed text-ink-soft">
+          The website is not yet set up to deliver enquiries, so your message has not reached
+          anyone.{" "}
+          {wa || mail || tel
+            ? "Please use one of these instead — they go straight to a person:"
+            : "Please try again later."}
+        </p>
+        {(wa || mail || tel) && (
+          <p className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
+            {wa && (
+              <a href={wa} target="_blank" rel="noopener noreferrer" className="link-rule">
+                <span className="label">WhatsApp</span>
+              </a>
+            )}
+            {mail && (
+              <a href={mail} className="link-rule">
+                <span className="label">Email</span>
+              </a>
+            )}
+            {tel && (
+              <a href={tel} className="link-rule">
+                <span className="label">Call</span>
+              </a>
+            )}
           </p>
         )}
       </div>
@@ -232,40 +277,12 @@ export default function InquiryForm({
           <>
             {" "}
             <span className="text-terracotta">
-              Dev note: set INQUIRY_WEBHOOK_URL or RESEND_API_KEY + INQUIRY_TO + INQUIRY_FROM, and
-              fill in company.ts, before launch.
+              Dev note: set MONGODB_URI (enquiries then appear in /admin), and RESEND_API_KEY +
+              INQUIRY_TO for email, and fill in company.ts, before launch.
             </span>
           </>
         )}
       </p>
     </form>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="flex items-baseline justify-between gap-3">
-        <span className="label-slim text-ink">
-          {label}
-          {required && <span className="ml-1 text-gold-deep">*</span>}
-        </span>
-        {hint && <span className="text-micro text-ink-faint">{hint}</span>}
-      </span>
-      <span className="mt-1.5 block">{children}</span>
-      {error && <span className="mt-1.5 block text-micro text-terracotta">{error}</span>}
-    </label>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { experiences, type ExperienceId } from "@/data/experiences";
 import { destinations, formatSeason } from "@/data/destinations";
 import { publishedJourneys, DIFFICULTY, formatDays } from "@/data/journeys";
 import ExperienceGlyph from "./ExperienceGlyph";
+import Photograph from "@/components/common/Photograph";
 import { metres, pad2 } from "@/lib/utils";
 
 /**
@@ -17,18 +18,27 @@ import { metres, pad2 } from "@/lib/utils";
  * behind a "submit" — the results are already there, and change as you choose,
  * which is the difference between a tool and a questionnaire.
  */
+/** `?pick=trekking&pick=food` or `?pick=trekking,food`; unknown ids are dropped. */
+function picksFrom(query: string): ExperienceId[] {
+  return query
+    .split(",")
+    .filter((p): p is ExperienceId => experiences.some((e) => e.id === p));
+}
+
 export default function ExperienceFinder() {
   const params = useSearchParams();
-  const [picked, setPicked] = useState<ExperienceId[]>([]);
 
-  // Arriving from a link that already made a choice — /experiences?pick=trekking
-  useEffect(() => {
-    const pick = params.getAll("pick").flatMap((p) => p.split(","));
-    const valid = pick.filter((p) =>
-      experiences.some((e) => e.id === p),
-    ) as ExperienceId[];
-    if (valid.length) setPicked(valid);
-  }, [params]);
+  // Arriving from a link that already made a choice — /experiences?pick=trekking.
+  // Read while rendering rather than in an effect, so the choice is there on
+  // the first frame instead of one frame late; and read again only when the
+  // address itself changes, so it never overrides what has been picked since.
+  const query = params.getAll("pick").join(",");
+  const [picked, setPicked] = useState<ExperienceId[]>(() => picksFrom(query));
+  const [queryRead, setQueryRead] = useState(query);
+  if (query !== queryRead) {
+    setQueryRead(query);
+    setPicked(picksFrom(query));
+  }
 
   const toggle = (id: ExperienceId) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -152,7 +162,8 @@ export default function ExperienceFinder() {
               Where that takes you
             </h2>
             <p className="numeral text-small text-ink-faint" aria-live="polite">
-              {matchedPlaces.length} destinations · {matchedRoutes.length} journeys
+              {matchedPlaces.length} {matchedPlaces.length === 1 ? "destination" : "destinations"} ·{" "}
+              {matchedRoutes.length} {matchedRoutes.length === 1 ? "journey" : "journeys"}
             </p>
           </div>
 
@@ -169,12 +180,11 @@ export default function ExperienceFinder() {
                   <li key={d.slug}>
                     <Link href={`/destinations/${d.slug}`} className="group block">
                       <div className="figure-frame aspect-[4/3] w-full">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={d.image}
+                        <Photograph
+                          photo={d.image}
                           alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-[1.4s] ease-[var(--ease-out-expo)] group-hover:scale-[1.05]"
+                          sizes="(max-width: 767px) 100vw, (max-width: 1023px) 50vw, 33vw"
+                          className="transition-transform duration-[1.4s] ease-[var(--ease-out-expo)] group-hover:scale-[1.05]"
                         />
                       </div>
                       <div className="mt-4 flex items-baseline gap-3">

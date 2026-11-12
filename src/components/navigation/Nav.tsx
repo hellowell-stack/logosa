@@ -19,7 +19,7 @@ const LINKS = [
  * Navigation sits transparent over the opening frame and takes on paper once
  * the page has moved. The emblem is used rather than the full lockup, because
  * at 40px the wordmark beneath it would be illegible — the complete logo is
- * shown at size in the hero and the footer.
+ * shown at size in the footer and on the about page.
  */
 export default function Nav() {
   const [settled, setSettled] = useState(false);
@@ -38,7 +38,13 @@ export default function Nav() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => setOpen(false), [pathname]);
+  // A new page closes the menu. Done while rendering rather than in an
+  // effect, so the new page never paints with the old menu still over it.
+  const [menuPath, setMenuPath] = useState(pathname);
+  if (pathname !== menuPath) {
+    setMenuPath(pathname);
+    setOpen(false);
+  }
 
   // Menu open: trap focus loosely, lock the page, and close on Escape.
   useEffect(() => {

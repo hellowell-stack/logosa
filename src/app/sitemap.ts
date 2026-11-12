@@ -3,6 +3,7 @@ import { SITE_URL } from "@/data/company";
 import { destinations } from "@/data/destinations";
 import { journeys } from "@/data/journeys";
 import { stories } from "@/data/stories";
+import { databaseConfigured } from "@/lib/db";
 
 /**
  * Only routes that actually render are listed. Draft journeys and unpublished
@@ -22,6 +23,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/travel-guide`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/about`, lastModified: now, changeFrequency: "yearly", priority: 0.5 },
     { url: `${SITE_URL}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.8 },
+    ...(databaseConfigured()
+      ? [{ url: `${SITE_URL}/book`, lastModified: now, changeFrequency: "yearly" as const, priority: 0.8 }]
+      : []),
   ];
 
   const destinationPages: MetadataRoute.Sitemap = destinations.map((d) => ({

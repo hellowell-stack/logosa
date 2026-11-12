@@ -3,8 +3,8 @@
  *
  * Node strips types natively but resolves like a bundler will not: it needs
  * explicit file extensions, and it does not know the `@/` alias. This hook
- * supplies both, so scripts and the app can share one copy of the scene
- * engine and one copy of the data instead of drifting apart.
+ * supplies both, so scripts and the app can share one copy of the data
+ * instead of drifting apart.
  */
 import { pathToFileURL } from "node:url";
 import { join, dirname } from "node:path";
@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 
 export async function resolve(specifier, context, next) {
-  // Project alias: "@/lib/scene" → <root>/src/lib/scene
+  // Project alias: "@/data/photos" → <root>/src/data/photos
   if (specifier.startsWith("@/")) {
     specifier = pathToFileURL(join(src, specifier.slice(2))).href;
   }

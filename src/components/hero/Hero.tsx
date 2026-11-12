@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { gsap, ScrollTrigger, registerGsap, prefersReducedMotion, isHandheld } from "@/lib/animations/motion";
+import {
+  gsap,
+  ScrollTrigger,
+  registerGsap,
+  prefersReducedMotion,
+  useReducedMotion,
+  useHandheld,
+} from "@/lib/animations/motion";
 import { heroChannel } from "@/lib/animations/scrollState";
 import { DhakaField, DhakaLozenge } from "@/components/common/Dhaka";
 import { PrayerFlags, Sun } from "./DrawnSky";
@@ -32,14 +39,12 @@ export default function Hero() {
   const flags = useRef<HTMLDivElement>(null);
   const support = useRef<HTMLParagraphElement>(null);
   const cue = useRef<HTMLDivElement>(null);
-  const [still, setStill] = useState(false);
-  const [low, setLow] = useState(false);
+  const still = useReducedMotion();
+  const low = useHandheld();
 
   useEffect(() => {
     registerGsap();
     const reduced = prefersReducedMotion();
-    setStill(reduced);
-    setLow(isHandheld());
 
     const ch = heroChannel();
 

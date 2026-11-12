@@ -1,14 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The local development database: it downloads and spawns a real mongod,
+  // which only works from its own package directory, not from a bundle. (The
+  // `mongodb` driver itself is on Next's built-in external list.)
+  serverExternalPackages: ["mongodb-memory-server-core"],
+
   images: {
-    // Destinations carry photography now; story plates are still generated SVG
-    // (see public/images/PLACEHOLDERS.md). Next refuses to optimise SVG by default
-    // because a hostile SVG can carry script — these are all first-party files
-    // under /public, and the CSP below neutralises scripting regardless.
-    dangerouslyAllowSVG: true,
-    contentSecurityPolicy:
-      "default-src 'self'; script-src 'none'; sandbox; style-src 'unsafe-inline';",
+    // Every plate is a photograph (src/data/photos.ts), served from one WebP
+    // per picture that `npm run build:images` writes. The optimiser cuts the
+    // smaller sizes and the AVIF copies from it on demand.
+    //
     // Next 16 requires an explicit allowlist; anything outside it is coerced
     // to the nearest permitted value.
     qualities: [70, 82, 92],

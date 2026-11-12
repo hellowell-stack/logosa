@@ -5,8 +5,12 @@ import Link from "next/link";
 import nepal from "@/data/nepal-boundary.json";
 import { mapChapters, routeCoords } from "@/data/map-journey";
 import { smoothPath, type Coord } from "@/lib/mapbox/journey";
-import { registerGsap, ScrollTrigger, prefersReducedMotion } from "@/lib/animations/motion";
-import { ridgeline, ridgeStroke, seedFrom } from "@/lib/terrain";
+import {
+  registerGsap,
+  ScrollTrigger,
+  prefersReducedMotion,
+  useReducedMotion,
+} from "@/lib/animations/motion";
 import { pad2 } from "@/lib/utils";
 
 /**
@@ -21,12 +25,81 @@ import { pad2 } from "@/lib/utils";
  * actually is — which is the whole difference between an atlas and a diagram.
  */
 
-const W = 1200;
-const H = 620;
-const PAD = 46;
+/**
+ * The frame is cut close to the country. Nepal is nearly twice as wide as it
+ * is tall, so on a phone the map is limited by the width of the screen and
+ * every unit of padding in here comes straight off the size it is drawn at.
+ */
+const W = 1060;
+const H = 590;
+const PAD = 26;
 
 type Ring = number[][];
 const ring = (nepal as { coordinates: Ring[] }).coordinates[0] as Ring;
+
+/**
+ * The northern skyline of the country: for each column of longitude, the
+ * highest latitude the boundary reaches there.
+ *
+ * The obvious way to get the northern border is to walk the ring from its
+ * westernmost vertex to its easternmost one — but Nepal's easternmost point is
+ * in the far *south*-east, at the Mechi corner, so that walk comes back down
+ * the eastern border and the hachure drawn from it knots up over the Khumbu.
+ * Sampling by column has no such trap, and it returns a chain that only ever
+ * moves east — which is what keeps five offset courses from crossing.
+ */
+function northernProfile(pts: Ring, columns = 96): Ring {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const [lon] of pts) {
+    min = Math.min(min, lon);
+    max = Math.max(max, lon);
+  }
+  const span = max - min;
+  const top: (number | null)[] = new Array(columns).fill(null);
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[i + 1];
+    if (x1 === x2) continue;
+    const lo = Math.min(x1, x2);
+    const hi = Math.max(x1, x2);
+    const from = Math.max(0, Math.ceil(((lo - min) / span) * (columns - 1)));
+    const to = Math.min(columns - 1, Math.floor(((hi - min) / span) * (columns - 1)));
+    for (let k = from; k <= to; k++) {
+      const lon = min + (k / (columns - 1)) * span;
+      const lat = y1 + ((lon - x1) / (x2 - x1)) * (y2 - y1);
+      const best = top[k];
+      if (best === null || lat > best) top[k] = lat;
+    }
+  }
+
+  const out: Ring = [];
+  top.forEach((lat, k) => {
+    if (lat !== null) out.push([min + (k / (columns - 1)) * span, lat]);
+  });
+  return out;
+}
+
+/**
+ * Label placement, set by hand.
+ *
+ * Pokhara and Langtang are on the same parallel to three decimal places, and
+ * Langtang, Everest and Kathmandu fall inside one thumbprint on the page. No
+ * rule of the "labels go right unless the marker is in the eastern third" kind
+ * separates those; cartographers place labels by hand, and there are only
+ * eight of them.
+ */
+const LABELS: Record<string, { dx: number; dy: number; anchor: "start" | "end" | "middle" }> = {
+  mustang: { dx: 11, dy: 4, anchor: "start" },
+  annapurna: { dx: 11, dy: 4, anchor: "start" },
+  pokhara: { dx: -11, dy: 4, anchor: "end" },
+  langtang: { dx: 0, dy: -14, anchor: "middle" },
+  everest: { dx: -11, dy: -10, anchor: "end" },
+  kathmandu: { dx: 11, dy: 17, anchor: "start" },
+  chitwan: { dx: -11, dy: 15, anchor: "end" },
+  lumbini: { dx: -11, dy: 4, anchor: "end" },
+};
 
 /** Equirectangular, x scaled by cos(mean latitude) so the shape is not
  *  stretched. At Nepal's size the distortion against a proper projection is
@@ -53,7 +126,10 @@ export default function Atlas() {
   const project = useMemo(() => makeProjection(ring), []);
   const rootRef = useRef<HTMLDivElement>(null);
   const routeRef = useRef<SVGPathElement>(null);
-  const [active, setActive] = useState(0);
+  const [reached, setReached] = useState(0);
+  // Nothing is scrubbed under reduced motion, so the whole route is shown at
+  // once and the last chapter is the one standing.
+  const active = useReducedMotion() ? mapChapters.length - 1 : reached;
 
   const border = useMemo(
     () => ring.map((p, i) => `${i ? "L" : "M"}${project(p).map((n) => n.toFixed(1)).join(" ")}`).join("") + "Z",
@@ -65,23 +141,30 @@ export default function Atlas() {
     return pts.map((p, i) => `${i ? "L" : "M"}${project(p).map((n) => n.toFixed(1)).join(" ")}`).join("");
   }, [project]);
 
-  // Himalayan relief, drawn as hachure along the northern border — the
-  // convention of a hand-drawn atlas rather than a shaded raster.
+  // Himalayan relief, as hachure — the convention of a hand-drawn atlas rather
+  // than a shaded raster.
+  //
+  // These used to be procedural ridgelines laid in a horizontal band across
+  // the top of the frame. Nepal runs diagonally, so a horizontal band covers
+  // the far west and nothing else, and the map read as a country with
+  // mountains in one corner. Here each course is the country's own northern
+  // skyline, stepped south — so the relief follows the arc of the range, the
+  // whole way along it, which is where the range actually is.
   const ridges = useMemo(() => {
-    const out: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      const r = ridgeline({
-        seed: seedFrom(`atlas-${i}`),
-        peaks: 9 + i,
-        height: 0.5 + i * 0.06,
-        roughness: 0.55,
-        flank: 1.1,
-        vertices: 70,
-      });
-      out.push(ridgeStroke(r, W * 0.86, 54 + i * 5));
-    }
-    return out;
-  }, []);
+    const chain = northernProfile(ring);
+    return Array.from({ length: 5 }, (_, i) => {
+      const drop = 0.1 + i * 0.13;
+      return chain
+        .map((p, k) => {
+          // Two frequencies of wobble, so the courses read as drawn hachure
+          // rather than as five offsets of one curve.
+          const wob = Math.sin(k * 1.7 + i * 2.3) * 0.032 + Math.sin(k * 0.6 + i) * 0.018;
+          const [x, y] = project([p[0], p[1] - drop + wob]);
+          return `${k ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+        })
+        .join("");
+    });
+  }, [project]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -95,10 +178,7 @@ export default function Atlas() {
       path.style.strokeDashoffset = prefersReducedMotion() ? "0" : `${len}`;
     }
 
-    if (prefersReducedMotion()) {
-      setActive(mapChapters.length - 1);
-      return;
-    }
+    if (prefersReducedMotion()) return;
 
     const st = ScrollTrigger.create({
       trigger: el,
@@ -111,7 +191,7 @@ export default function Atlas() {
         const routeProgress = Math.max(0, (p * n - 1) / (n - 1));
         if (path) path.style.strokeDashoffset = `${len * (1 - routeProgress)}`;
         const idx = Math.round(p * n);
-        setActive((prev) => (prev === idx ? prev : idx));
+        setReached((prev) => (prev === idx ? prev : idx));
       },
     });
     return () => st.kill();
@@ -126,7 +206,16 @@ export default function Atlas() {
       className="relative"
       style={{ height: `${mapChapters.length * 80}vh` }}
     >
-      <div className="on-ink paper-grain sticky top-0 flex h-screen w-full flex-col overflow-hidden">
+      <div className="on-ink paper-grain sticky top-0 flex h-screen w-full flex-col justify-center overflow-hidden">
+        {/* The map gets its own box rather than the whole frame.
+            On a phone it is cut to the plate's own proportions and the chapter
+            sits directly under it, the pair centred — the map used to be
+            centred in the whole screen with the chapter pinned to the foot,
+            which left a third of the page empty above a very small country.
+            From md up the box takes the width the chapter panel does not, so
+            the eastern end — and the Everest label on it — stops disappearing
+            underneath the panel. */}
+        <div className="relative aspect-[1060/590] w-full shrink-0 md:absolute md:inset-y-0 md:left-0 md:right-[min(28rem,38vw)] md:aspect-auto md:w-auto">
         <svg
           className="absolute inset-0 h-full w-full"
           viewBox={`0 0 ${W} ${H}`}
@@ -148,8 +237,11 @@ export default function Atlas() {
             })}
           </g>
 
-          {/* The country */}
-          <path d={border} fill="#012C42" stroke="#F7F4EC" strokeOpacity="0.34" strokeWidth="1.2" />
+          {/* The country. Lifted well clear of the ink-deep ground behind it:
+              at the old fill the silhouette was a shade off the background and
+              the whole point of the plate — the shape of Nepal — was something
+              you had to look for. */}
+          <path d={border} fill="#0A3A55" stroke="#F7F4EC" strokeOpacity="0.5" strokeWidth="1.3" />
 
           {/* Himalayan hachure, clipped to the country */}
           <defs>
@@ -157,16 +249,15 @@ export default function Atlas() {
               <path d={border} />
             </clipPath>
           </defs>
-          <g clipPath="url(#atlas-clip)" opacity="0.5">
+          <g clipPath="url(#atlas-clip)">
             {ridges.map((d, i) => (
               <path
                 key={i}
                 d={d}
-                transform={`translate(${W * 0.07} ${86 + i * 26})`}
                 fill="none"
-                stroke="#7797B5"
+                stroke="#9DBBD4"
                 strokeWidth="1"
-                strokeOpacity={0.75 - i * 0.11}
+                strokeOpacity={0.5 - i * 0.08}
               />
             ))}
           </g>
@@ -187,6 +278,8 @@ export default function Atlas() {
             if (!c.slug) return null;
             const [x, y] = project(c.center);
             const on = i <= active;
+            const live = i === active;
+            const place = LABELS[c.id] ?? { dx: 11, dy: 4, anchor: "start" as const };
             return (
               <g key={c.id} transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
                 <rect
@@ -195,24 +288,29 @@ export default function Atlas() {
                   width={8}
                   height={8}
                   transform="rotate(45)"
-                  fill={i === active ? "#FDB614" : on ? "#F7F4EC" : "#012C42"}
+                  fill={live ? "#FDB614" : on ? "#F7F4EC" : "#0A3A55"}
                   stroke="#F7F4EC"
                   strokeWidth="1.2"
                   style={{ transition: "fill .5s ease" }}
                 />
                 {/*
-                  The chapter panel sits over the right of the map, so a label
-                  set to the right of an eastern marker runs underneath it.
-                  Those labels are placed to the left of their marker instead.
+                  The map is drawn to the width of a phone, so every label on
+                  it is set at about half the size it is here. Eight of them at
+                  that size is illegible clutter over the one thing worth
+                  reading, which is the shape of the country — so below md only
+                  the live chapter is named, and it is named large enough to
+                  read. The panel underneath is already saying the name in
+                  display type, which is what makes that affordable.
                 */}
                 <text
-                  x={x > W * 0.58 ? -10 : 10}
-                  y={4}
-                  textAnchor={x > W * 0.58 ? "end" : "start"}
-                  fontSize="11"
-                  letterSpacing="1.6"
-                  fill={i === active ? "#FDB614" : "#F7F4EC"}
-                  fillOpacity={i === active ? 1 : 0.55}
+                  className={live ? undefined : "hidden md:block"}
+                  x={place.dx}
+                  y={place.dy + (live ? 2 : 0)}
+                  textAnchor={place.anchor}
+                  fontSize={live ? 18 : 12.5}
+                  letterSpacing={live ? 1.8 : 1.4}
+                  fill={live ? "#FDB614" : "#F7F4EC"}
+                  fillOpacity={live ? 1 : 0.6}
                   style={{
                     fontFamily: "var(--font-sans)",
                     textTransform: "uppercase",
@@ -226,9 +324,10 @@ export default function Atlas() {
             );
           })}
         </svg>
+        </div>
 
         {/* Chapter */}
-        <div className="relative z-10 mt-auto p-[var(--spacing-gutter)] md:absolute md:inset-y-0 md:right-0 md:flex md:w-[min(28rem,38vw)] md:items-center">
+        <div className="relative z-10 p-[var(--spacing-gutter)] md:absolute md:inset-y-0 md:right-0 md:flex md:w-[min(28rem,38vw)] md:items-center">
           <div className="w-full bg-[color-mix(in_srgb,#00212F_90%,transparent)] p-6 md:p-8">
             <div className="flex items-baseline gap-3">
               <span className="numeral text-small text-gold">{pad2(active + 1)}</span>

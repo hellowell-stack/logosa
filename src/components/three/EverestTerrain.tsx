@@ -6,6 +6,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { createTerrainMaterial } from "./terrainMaterial";
 import { heroChannel } from "@/lib/animations/scrollState";
+import { isHandheld } from "@/lib/animations/motion";
 
 /**
  * The opening sequence: a real survey of Everest, graded into the identity.
@@ -159,6 +160,11 @@ export default function EverestTerrain({
     };
   }, [materials]);
 
+  // The frame loop mutates three.js objects in place, every frame, outside
+  // React's render cycle — which is how react-three-fiber is meant to be
+  // driven, and which React's immutability check cannot tell apart from
+  // mutating render state. The exception is this loop and nothing else.
+  /* eslint-disable react-hooks/immutability */
   useFrame((_, delta) => {
     const p = THREE.MathUtils.clamp(ch.progress, 0, 1);
 
@@ -191,8 +197,11 @@ export default function EverestTerrain({
       for (const m of materials) m.uniforms.uReveal.value = t * t * (3 - 2 * t);
     }
   });
+  /* eslint-enable react-hooks/immutability */
 
   return <primitive object={root} />;
 }
 
-useGLTF.preload("/models/everest.glb", false);
+// Only the tile this device will render. Preloading the full one regardless
+// sent every phone 1.7 MB it then never drew.
+useGLTF.preload(isHandheld() ? "/models/everest-low.glb" : "/models/everest.glb", false);

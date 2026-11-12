@@ -1,9 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bodoni_Moda, Archivo, Newsreader, Tiro_Devanagari_Hindi } from "next/font/google";
 import "./globals.css";
-import SmoothScroll from "@/components/common/SmoothScroll";
-import Nav from "@/components/navigation/Nav";
-import Footer from "@/components/footer/Footer";
 import { SITE_URL, company } from "@/data/company";
 
 /**
@@ -95,6 +92,12 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
+/**
+ * The document, and nothing else. The public site's navigation, footer and
+ * smooth scrolling live in `(site)/layout.tsx`, and the admin has its own shell
+ * in `admin/` — a booking desk has no business inheriting Lenis and a
+ * magazine masthead. Both provide `#main` for the skip link.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -105,11 +108,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a href="#main" className="sr-only">
           Skip to content
         </a>
-        <SmoothScroll>
-          <Nav />
-          <main id="main">{children}</main>
-          <Footer />
-        </SmoothScroll>
+        {children}
       </body>
     </html>
   );

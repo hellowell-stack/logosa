@@ -1,4 +1,5 @@
 import type { ExperienceId } from "./experiences";
+import { photos, type Photo } from "./photos";
 
 /**
  * JOURNEYS — the routes Logosa can run.
@@ -97,8 +98,8 @@ export interface Journey {
   /** Commercial terms — intentionally empty. See the file header. */
   included: string[];
   excluded: string[];
-  image: string;
-  imageAlt: string;
+  /** The lead photograph. See photos.ts. */
+  image: Photo;
 }
 
 export const journeys: Journey[] = [
@@ -144,8 +145,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/khumbu-icefall.webp",
-    imageAlt: "The Khumbu icefall and glacier moraine below Everest, prayer flags strung along the camp",
+    image: photos.khumbuIcefall,
   },
 
   {
@@ -187,8 +187,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/annapurna.webp",
-    imageAlt: "Trekkers walking into the Annapurna Sanctuary, a glacial basin ringed by snow peaks",
+    image: photos.annapurnaSanctuary,
   },
 
   {
@@ -235,8 +234,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/upper-mustang.webp",
-    imageAlt: "The arid Kali Gandaki valley north of Thorong La, with eroded cliffs above the riverbed",
+    image: photos.mustangChortens,
   },
 
   {
@@ -272,8 +270,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/poon-hill.webp",
-    imageAlt: "Dhaulagiri above the Poon Hill ridge, seen over flowering rhododendron in spring",
+    image: photos.dhaulagiri,
   },
 
   {
@@ -313,8 +310,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/langtang.webp",
-    imageAlt: "The upper Langtang valley with glaciated peaks above a prayer-flagged suspension bridge",
+    image: photos.langtangBridge,
   },
 
   {
@@ -362,8 +358,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/upper-mustang.webp",
-    imageAlt: "A Mustang settlement on the high plateau, whitewashed walls and chortens against ochre cliffs",
+    image: photos.mustangChortens,
   },
 
   {
@@ -396,8 +391,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/patan.webp",
-    imageAlt: "The stone shikhara of Krishna Mandir and tiered temple roofs in Patan Durbar Square",
+    image: photos.patanDurbarSquare,
   },
 
   {
@@ -429,8 +423,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/chitwan.webp",
-    imageAlt: "Morning mist over elephant grass and river channels in Chitwan National Park",
+    image: photos.chitwanRiver,
   },
 
   {
@@ -462,8 +455,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/lumbini.webp",
-    imageAlt: "The Maya Devi Temple at Lumbini reflected in the sacred pond in early light",
+    image: photos.mayaDevi,
   },
 
   {
@@ -500,8 +492,7 @@ export const journeys: Journey[] = [
     price: null,
     included: [],
     excluded: [],
-    image: "/images/destinations/bhaktapur.webp",
-    imageAlt: "The tiered roofs of Nyatapola above Bhaktapur Durbar Square with the valley rim beyond",
+    image: photos.nyatapola,
   },
 ];
 

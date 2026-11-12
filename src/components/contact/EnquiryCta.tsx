@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { company, confirmed, whatsappLink, telLink } from "@/data/company";
 import { DhakaBand } from "@/components/common/Dhaka";
+import { databaseConfigured } from "@/lib/db";
 
 /**
  * The close. One clear action, one alternative, and the honest position on
@@ -11,11 +12,20 @@ export default function EnquiryCta({
   heading = "Tell us where you want to go.",
   note = "Send us the shape of the trip — dates, how long, what you want out of it — and we will come back with an itinerary and a price for your group. No deposit to ask a question.",
   subject,
+  bookSlug,
 }: {
   heading?: string;
   note?: string;
   subject?: string;
+  /**
+   * On a journey page: someone who already has dates can go straight to a
+   * booking request, so that becomes the first action and the enquiry the
+   * second. Only offered when bookings are switched on.
+   */
+  bookSlug?: string;
 }) {
+  const bookable = Boolean(bookSlug) && databaseConfigured();
+  const enquire = bookSlug ? `/contact?journey=${bookSlug}` : "/contact";
   const wa = whatsappLink(
     subject
       ? `Hello Logosa — I would like to ask about ${subject}.`
@@ -39,7 +49,12 @@ export default function EnquiryCta({
             <p className="mt-6 max-w-lg text-body-lg leading-relaxed text-ink-soft">{note}</p>
 
             <div className="mt-9 flex flex-wrap gap-3">
-              <Link href="/contact" className="btn">
+              {bookable && (
+                <Link href={`/book?journey=${bookSlug}`} className="btn">
+                  Request to book
+                </Link>
+              )}
+              <Link href={enquire} className={bookable ? "btn btn-ghost" : "btn"}>
                 Start an enquiry
               </Link>
               {wa && (
